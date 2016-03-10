@@ -111,6 +111,95 @@ ZipEndOfCentralDirectory.MAGIC_SIGNATURE = 0x06054b50;
 ZipEndOfCentralDirectory.RECORD_SIZE = 22;
 
 /**
+ * Zip file header on central directory structure.
+ * @constructor
+ * 
+ * @param {Object} buffer Buffer instance
+ */
+function ZipCentralDirectoryFileHeader(buffer) {
+    throw new Error('@TODO: ZipCentralDirectoryFileHeader()');
+
+    if (!(this instanceof ZipCentralDirectoryFileHeader)) {
+        return new ZipCentralDirectoryFileHeader(buffer);
+    }
+
+    if (!(buffer instanceof Buffer)) {
+        throw new Error('Param @buffer must be a Buffer instance');
+    }
+
+    if (buffer.length != ZipCentralDirectoryFileHeader.RECORD_SIZE) {
+        throw new Error('Invalid buffer size');
+    }
+
+    // central file header signature   4 bytes  (0x02014b50)
+    this._signature = buffer.readZipDWord(0);
+
+    // version made by                 2 bytes
+    this._versionMadeBy = buffer.readZipWord(4);
+
+    // version needed to extract       2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // general purpose bit flag        2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // compression method              2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // last mod file time              2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // last mod file date              2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // crc-32                          4 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // compressed size                 4 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // uncompressed size               4 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // filename length                 2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // extra field length              2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // file comment length             2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // disk number start               2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // internal file attributes        2 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // external file attributes        4 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    // relative offset of local header 4 bytes
+    this._ = buffer.readZipXXWord(INDEX);
+
+    /*
+    filename (variable size)
+	extra field (variable size)
+	file comment (variable size)
+    */
+
+    if (this._signature !== ZipCentralDirectoryFileHeader.MAGIC_SIGNATURE) {
+        throw new Error('File header on central directory signature error');
+    }
+}
+
+/** @constant {number} */
+ZipCentralDirectoryFileHeader.MAGIC_SIGNATURE = 0x02014b50;
+
+/** @constant {number} */
+ZipCentralDirectoryFileHeader.RECORD_SIZE = 46;
+
+/**
  * Extract a zip file
  * 
  * @note: http://www.fileformat.info/info/mimetype/application/zip/index.htm
@@ -135,12 +224,14 @@ function ZipExtractor(filePath) {
     this._handle = fs.openSync(filePath, 'r');
     this._size = stat.size;
 
-    var eocd = this.readEndOfCentralDirectory();
+    this.readEndOfCentralDirectory();
 
-    console.log(JSON.stringify(eocd, null, 4));
+    console.log(JSON.stringify(this._eocd, null, 4));
 
     // Central directory structure
     // [eocd._offset] to [eocd._offset + eocd._size]
+
+    this.readCentralDirectoryFiles();
 }
 
 /**
@@ -175,9 +266,7 @@ ZipExtractor.prototype.read = function(length, position) {
 }
 
 /**
- * End of central dir record from zip file
- * 
- * @return {Object} ZipEndOfCentralDirectory instance 
+ * End of central dir record from zip file 
  */
 ZipExtractor.prototype.readEndOfCentralDirectory = function() {
     var eocd_pos = this._size - 4;
@@ -213,7 +302,18 @@ ZipExtractor.prototype.readEndOfCentralDirectory = function() {
         throw new Error('ZIP file corrupted. End of central directory record not found.');
     }
 
-    return eocd;
+    this._eocd = eocd;
+}
+
+/**
+ * Read a file header list from central directory structure of ZIP file
+ */
+ZipExtractor.prototype.readCentralDirectoryFiles = function() {
+    if (!(this._eocd instanceof ZipEndOfCentralDirectory)) {
+        throw new Error('Invalid EOCD instance.');
+    }
+
+    throw new Error('@TODO: readCentralDirectoryFiles()')
 }
 
 function main(args) {
