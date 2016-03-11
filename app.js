@@ -269,7 +269,6 @@ ZipExtractor.prototype.mapFile = function(file) {
  * @return {Object} Content Buffer 
  */
 ZipExtractor.prototype.read = function(length, position) {
-
     if (!Number.isInteger(length) || length < 1) {
         throw new Error('Param @length must be a positive number');
     }
@@ -383,7 +382,9 @@ ZipExtractor.prototype.readCentralDirectoryFiles = function() {
 }
 
 /**
- * Return a directory list
+ * Get a directory list
+ * 
+ * @param {Object} Array of string
  */
 ZipExtractor.prototype.getDirectories = function() {
     var self = this,
@@ -401,12 +402,21 @@ ZipExtractor.prototype.getDirectories = function() {
 }
 
 
+/**
+ * Get a list file from directory path
+ * 
+ * @param {string} directory
+ * 
+ * @return {Object}
+ */
 ZipExtractor.prototype.getFilesFromDirectory = function(directory) {
-
+    /** @todo: Not implemented */
 }
 
+/**
+ * Main entry point
+ */
 function main(args) {
-
     if (args.length !== 1) {
         throw new Error('Usage: $ printzip file.zip');
     }
