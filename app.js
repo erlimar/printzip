@@ -1,10 +1,12 @@
 // Copyright (c) E5R Development Team. All rights reserved.
 // Licensed under the Apache License, Version 2.0. More license information in LICENSE.txt.
 
+"use strict";
+
 /* global process, __filename, __dirname */
 
-var fs = require('fs'),
-    path = require('path');
+var _fs = require('fs'),
+    _path = require('path');
 
 /**
  * Read a BYTE (8bits) from buffer
@@ -117,8 +119,6 @@ ZipEndOfCentralDirectory.RECORD_SIZE = 22;
  * @param {Object} buffer Buffer instance
  */
 function ZipCentralDirectoryFileHeader(buffer) {
-    throw new Error('@TODO: ZipCentralDirectoryFileHeader()');
-
     if (!(this instanceof ZipCentralDirectoryFileHeader)) {
         return new ZipCentralDirectoryFileHeader(buffer);
     }
@@ -138,55 +138,49 @@ function ZipCentralDirectoryFileHeader(buffer) {
     this._versionMadeBy = buffer.readZipWord(4);
 
     // version needed to extract       2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._versionNeeded = buffer.readZipWord(6);
 
     // general purpose bit flag        2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._generalFlag = buffer.readZipWord(8);
 
     // compression method              2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._compressionMethod = buffer.readZipWord(10);
 
     // last mod file time              2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._lastModifyTime = buffer.readZipWord(12);
 
     // last mod file date              2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._lastModifyDate = buffer.readZipWord(14);
 
     // crc-32                          4 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._crc32 = buffer.readZipDWord(16);
 
     // compressed size                 4 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._compressedSize = buffer.readZipDWord(20);
 
     // uncompressed size               4 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._uncompressedSize = buffer.readZipDWord(24);
 
     // filename length                 2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._fileNameLength = buffer.readZipWord(28);
 
     // extra field length              2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._extraFieldLength = buffer.readZipWord(30);
 
     // file comment length             2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._commentLength = buffer.readZipWord(32);
 
     // disk number start               2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._distNumber = buffer.readZipWord(34);
 
     // internal file attributes        2 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._internalAttributes = buffer.readZipWord(36);
 
     // external file attributes        4 bytes
-    this._ = buffer.readZipXXWord(INDEX);
+    this._externalAttributes = buffer.readZipDWord(38);
 
     // relative offset of local header 4 bytes
-    this._ = buffer.readZipXXWord(INDEX);
-
-    /*
-    filename (variable size)
-	extra field (variable size)
-	file comment (variable size)
-    */
+    this._relativeOffset = buffer.readZipDWord(42);
 
     if (this._signature !== ZipCentralDirectoryFileHeader.MAGIC_SIGNATURE) {
         throw new Error('File header on central directory signature error');
@@ -212,7 +206,7 @@ function ZipExtractor(filePath) {
     var stat;
 
     try {
-        stat = fs.statSync(filePath);
+        stat = _fs.statSync(filePath);
     } catch (_) {
         throw new Error('Invalid file "' + filePath + '"');
     }
@@ -221,17 +215,49 @@ function ZipExtractor(filePath) {
         return new ZipExtractor(filePath);
     }
 
-    this._handle = fs.openSync(filePath, 'r');
+    this._handle = _fs.openSync(filePath, 'r');
     this._size = stat.size;
+    this._files = [];
+    this._directories = {};
 
     this.readEndOfCentralDirectory();
-
-    console.log(JSON.stringify(this._eocd, null, 4));
-
-    // Central directory structure
-    // [eocd._offset] to [eocd._offset + eocd._size]
-
     this.readCentralDirectoryFiles();
+}
+
+/**
+ * Map a file to directory path
+ * 
+ * @param {Object} file ZipCentralDirectoryFileHeader instance
+ */
+ZipExtractor.prototype.mapFile = function(file) {
+    var dir,
+        dirName,
+        fileName,
+        isDir = file._fileName.lastIndexOf('/') === file._fileName.length - 1;
+
+    if (isDir) {
+        dirName = _path.normalize(file._fileName);
+    } else {
+        dirName = _path.join(_path.dirname(_path.normalize(file._fileName)), _path.sep);
+        fileName = _path.basename(file._fileName);
+    }
+
+    if (0 > Object.keys(this._directories).indexOf(dirName)) {
+        dir = this._directories[dirName] = {};
+    } else {
+        dir = this._directories[dirName];
+    }
+
+    if (isDir) {
+        dir['meta'] = file;
+    } else {
+        if (0 > Object.keys(dir).indexOf('files')) dir['files'] = [];
+
+        dir['files'].push({
+            'name': fileName,
+            'meta': file
+        });
+    }
 }
 
 /**
@@ -257,7 +283,7 @@ ZipExtractor.prototype.read = function(length, position) {
         read = 0;
 
     while (read < length) {
-        read += fs.readSync(this._handle, buffer, offset, length - read, position + read);
+        read += _fs.readSync(this._handle, buffer, offset, length - read, position + read);
         offset = read - 1;
         if (offset < 0) offset = 0;
     }
@@ -313,7 +339,70 @@ ZipExtractor.prototype.readCentralDirectoryFiles = function() {
         throw new Error('Invalid EOCD instance.');
     }
 
-    throw new Error('@TODO: readCentralDirectoryFiles()')
+    var pos = this._eocd._offset;
+
+    while (this._files.length < this._eocd._totalEntries) {
+        var buffer = this.read(ZipCentralDirectoryFileHeader.RECORD_SIZE, pos);
+        var file = new ZipCentralDirectoryFileHeader(buffer);
+        pos += ZipCentralDirectoryFileHeader.RECORD_SIZE;
+
+        // filename
+        if (file._fileNameLength > 0) {
+            file._fileName = this.read(file._fileNameLength, pos).toString();
+            pos += file._fileNameLength;
+        } else {
+            file._fileName = '';
+        }
+
+        // extra fiel
+        if (file._extraFieldLength > 0) {
+            file._extraField = this.read(file._extraFieldLength, pos);
+            pos += file._extraFieldLength;
+        } else {
+            file._extraField = null;
+        }
+
+        // file comment
+        if (file._commentLength > 0) {
+            file._comment = this.read(file._commentLength, pos).toString();
+            pos += file._commentLength;
+        } else {
+            file._comment = '';
+        }
+
+        var count = this._files.push(file);
+        this.mapFile(this._files[count - 1]);
+    }
+
+    // Ensures root directory
+    var rootName = _path.normalize('./');
+
+    if (0 > Object.keys(this._directories).indexOf(rootName)) {
+        this._directories[rootName] = {};
+    }
+}
+
+/**
+ * Return a directory list
+ */
+ZipExtractor.prototype.getDirectories = function() {
+    var self = this,
+        list = [];
+
+    Object.keys(this._directories).map(function(name) {
+        list.push(name);
+    });
+
+    list.sort(function(a, b) {
+        return a.localeCompare(b);
+    });
+
+    return list;
+}
+
+
+ZipExtractor.prototype.getFilesFromDirectory = function(directory) {
+
 }
 
 function main(args) {
@@ -322,7 +411,9 @@ function main(args) {
         throw new Error('Usage: $ printzip file.zip');
     }
 
-    var extractor = new ZipExtractor(path.resolve(args[0]));
+    var extractor = new ZipExtractor(_path.resolve(args[0]));
+
+    console.log(JSON.stringify(extractor.getDirectories(), null, 2));
 }
 
 main(process.argv.slice(2));
