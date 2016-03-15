@@ -56,6 +56,12 @@ Buffer.prototype.readZipDWord = function(position) {
     return this.slice(position, position + 4).readUIntLE(0, 4);
 }
 
+/**
+ * Record structure for a directory
+ * 
+ * @param {string} name
+ * @param {Object} meta 
+ */
 function ZipDirectoryEntry(name, meta) {
     /** @todo: Privatize */
     if (!(this instanceof ZipDirectoryEntry)) {
@@ -68,6 +74,12 @@ function ZipDirectoryEntry(name, meta) {
     this.childs = [];
 }
 
+/**
+ * Record structure for a file
+ * 
+ * @param {string} name
+ * @param {Object} meta
+ */
 function ZipFileEntry(name, meta) {
     /** @todo: Privatize */
     if (!(this instanceof ZipFileEntry)) {
