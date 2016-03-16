@@ -238,6 +238,130 @@ ZipCentralDirectoryFileHeader.MAGIC_SIGNATURE = 0x02014b50;
 ZipCentralDirectoryFileHeader.RECORD_SIZE = 46;
 
 /**
+ * Zip local file header structure + file data structure.
+ * @constructor
+ * 
+ * @param {Object} buffer Buffer instance
+ */
+function ZipLocalFile(buffer) {
+    /** @todo: Privatize */
+    if (!(this instanceof ZipLocalFile)) {
+        return new ZipLocalFile(buffer);
+    }
+
+    if (!(buffer instanceof Buffer)) {
+        throw new Error('Param @buffer must be a Buffer instance');
+    }
+
+    if (buffer.length != ZipLocalFile.RECORD_SIZE) {
+        throw new Error('Invalid buffer size');
+    }
+
+    // local file header signature     4 bytes  (0x04034b50)
+    this._signature = buffer.readZipDWord(0);
+
+    // version needed to extract       2 bytes
+    this._versionNeeded = buffer.readZipWord(4);
+
+    // general purpose bit flag        2 bytes
+    this._generalFlag = buffer.readZipWord(6);
+
+    // compression method              2 bytes
+    this._compressionMethod = buffer.readZipWord(8);
+
+    // last mod file time              2 bytes
+    this._lastModifyTime = buffer.readZipWord(10);
+
+    // last mod file date              2 bytes
+    this._lastModifyDate = buffer.readZipWord(12);
+
+    // crc-32                          4 bytes
+    this._crc32 = buffer.readZipDWord(14);
+
+    // compressed size                 4 bytes
+    this._compressedSize = buffer.readZipDWord(18);
+
+    // uncompressed size               4 bytes
+    this._uncompressedSize = buffer.readZipDWord(22);
+
+    // filename length                 2 bytes
+    this._fileNameLength = buffer.readZipWord(26);
+
+    // extra field length              2 bytes
+    this._extraFieldLength = buffer.readZipWord(28);
+
+    if (this._signature !== ZipLocalFile.MAGIC_SIGNATURE) {
+        throw new Error('Local file header signature error');
+    }
+}
+
+/** @constant {number} */
+/** @todo: Privatize */
+ZipLocalFile.MAGIC_SIGNATURE = 0x04034b50;
+
+/** @constant {number} */
+/** @todo: Privatize */
+ZipLocalFile.RECORD_SIZE = 30;
+
+/** @constant {number} */
+/** @todo: Privatize */
+ZipLocalFile.DATA_DESCRIPTOR_FLAG = 0x04;
+
+ZipLocalFile.prototype.checkIntegrity = function(meta) {
+    console.log('TODO: ZipLocalFile.prototype.checkIntegrity not implemented');
+
+    /** @note: Only for compression method 8 - The file is Deflated 
+     *  0 - The file is stored (no compression)
+	 *  1 - The file is Shrunk
+	 *  2 - The file is Reduced with compression factor 1
+	 *  3 - The file is Reduced with compression factor 2
+	 *  4 - The file is Reduced with compression factor 3
+	 *  5 - The file is Reduced with compression factor 4
+	 *  6 - The file is Imploded
+	 *  7 - Reserved for Tokenizing compression algorithm
+	 *  8 - The file is Deflated
+     */
+
+    if (this._compressionMethod !== 8) {
+        throw new Error('Only Deflated compression method is available')
+    }
+}
+
+/**
+ * Zip local data descriptor structure.
+ * @constructor
+ * 
+ * @param {Object} buffer Buffer instance
+ */
+function ZipLocalDataDescriptor(buffer) {
+    /** @todo: Privatize */
+    if (!(this instanceof ZipLocalDataDescriptor)) {
+        return new ZipLocalDataDescriptor(buffer);
+    }
+
+    if (!(buffer instanceof Buffer)) {
+        throw new Error('Param @buffer must be a Buffer instance');
+    }
+
+    if (buffer.length != ZipLocalDataDescriptor.RECORD_SIZE) {
+        throw new Error('Invalid buffer size');
+    }
+
+    // crc-32                          4 bytes
+    this._crc32 = buffer.readZipDWord(0);
+
+    // compressed size                 4 bytes
+    this._compressedSize = buffer.readZipDWord(4);
+
+    // uncompressed size               4 bytes
+    this._uncompressedSize = buffer.readZipDWord(8);
+}
+
+/** @constant {number} */
+/** @todo: Privatize */
+ZipLocalDataDescriptor.RECORD_SIZE = 12;
+
+/**
  * Extract a zip file
  * 
  * @note: http://www.fileformat.info/info/mimetype/application/zip/index.htm
@@ -570,12 +694,52 @@ ZipExtractor.prototype.extractFile = function(entry, destination) {
     this.ensureDestinationDirectory(destination);
 
     var filePath = _path.resolve(_path.join(destination, entry.name)),
-        offset = this._eocd._offset + entry.meta._relativeOffset,
-        length = entry.meta._compressedSize//,
-        //bufferInput = this.read(length, offset)
-        ;
+        offset = entry.meta._relativeOffset,
+        fileBuffer = this.read(ZipLocalFile.RECORD_SIZE, offset),
+        file = new ZipLocalFile(fileBuffer);
 
-    throw new Error("TODO: ZipExtractor.prototype.extractFile not implemented.");
+    offset += ZipLocalFile.RECORD_SIZE;
+
+    // filename
+    if (file._fileNameLength > 0) {
+        file._fileName = this.read(file._fileNameLength, offset).toString();
+        offset += file._fileNameLength;
+    } else {
+        file._fileName = '';
+    }
+
+    // extra field
+    if (file._extraFieldLength > 0) {
+        file._extraField = this.read(file._extraFieldLength, offset);
+        offset += file._extraFieldLength;
+    } else {
+        file._extraField = null;
+    }
+
+    // file data
+    /**
+     * @note: Using entry.meta._compressedSize x file._compressedSize because general flag big
+     * */
+    if (entry.meta._compressedSize > 0) {
+        file._fileData = this.read(entry.meta._compressedSize, offset);
+        offset += entry.meta._compressedSize;
+    }
+
+    var bitsFlag = file._generalFlag.toString(2);
+
+    // Data descriptor
+    if (file._generalFlag & ZipLocalFile.DATA_DESCRIPTOR_FLAG === ZipLocalFile.DATA_DESCRIPTOR_FLAG) {
+        var dataDescriptorBuffer = this.read(ZipLocalDataDescriptor.RECORD_SIZE, offset),
+            dataDescriptor = new ZipLocalDataDescriptor(dataDescriptorBuffer);
+
+        file._crc32 = dataDescriptor._crc32;
+        file._compressedSize = dataDescriptor._compressedSize;
+        file._uncompressedSize = dataDescriptor._uncompressedSize;
+    }
+
+    file.checkIntegrity(entry.meta);
+
+    _fs.writeFileSync(filePath, _zlib.inflateRawSync(file._fileData));
 }
 
 /**
@@ -628,10 +792,10 @@ function main(args) {
     //extractor.extractTo('.\\not/exist/path', './extracted');
 
     // Extract a directory
-    //extractor.extractTo('php-5.4.45-devel-VC9-x86/script', './extracted');
+    extractor.extractTo('php-5.4.45-devel-VC9-x86/script', './extracted');
 
     // Extract a file
-    extractor.extractTo('php-5.4.45-devel-VC9-x86/include/ext/mbstring/libmbfl/mbfl/mbfilter.h', './extracted/mbstring');
+    //extractor.extractTo('php-5.4.45-devel-VC9-x86/include/ext/mbstring/libmbfl/mbfl/mbfilter.h', './extracted/mbstring');
 }
 
 main(process.argv.slice(2));
