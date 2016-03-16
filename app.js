@@ -322,7 +322,7 @@ ZipLocalFile.prototype.checkIntegrity = function(meta) {
 	 *  8 - The file is Deflated
      */
 
-    if (this._compressionMethod !== 8) {
+    if (this._compressionMethod !== 8 && this._compressionMethod !== 0) {
         throw new Error('Only Deflated compression method is available')
     }
 }
@@ -682,7 +682,20 @@ ZipExtractor.prototype.extractDirectory = function(entry, destination) {
 
     this.ensureDestinationDirectory(destination);
 
-    throw new Error("TODO: ZipExtractor.prototype.extractDirectory not implemented.");
+    // Files
+    for (var f in entry.files) {
+        var file = entry.files[f];
+        this.extractFile(file, destination);
+    }
+
+    // Child directories
+    for (var c in entry.childs) {
+        var child = entry.childs[c];
+        var child_destination = _path.join(destination, child.name);
+        this.extractDirectory(child, child_destination);
+    }
+
+    console.log('TODO: Apply directory date, time and attributes');
 }
 
 ZipExtractor.prototype.extractFile = function(entry, destination) {
@@ -725,8 +738,6 @@ ZipExtractor.prototype.extractFile = function(entry, destination) {
         offset += entry.meta._compressedSize;
     }
 
-    var bitsFlag = file._generalFlag.toString(2);
-
     // Data descriptor
     if (file._generalFlag & ZipLocalFile.DATA_DESCRIPTOR_FLAG === ZipLocalFile.DATA_DESCRIPTOR_FLAG) {
         var dataDescriptorBuffer = this.read(ZipLocalDataDescriptor.RECORD_SIZE, offset),
@@ -739,7 +750,13 @@ ZipExtractor.prototype.extractFile = function(entry, destination) {
 
     file.checkIntegrity(entry.meta);
 
-    _fs.writeFileSync(filePath, _zlib.inflateRawSync(file._fileData));
+    if (file._compressionMethod === 0) {
+        _fs.writeFileSync(filePath, file._fileData);
+    } else {
+        _fs.writeFileSync(filePath, _zlib.inflateRawSync(file._fileData));
+    }
+
+    console.log('TODO: Apply file date, time and attributes');
 }
 
 /**
@@ -786,13 +803,14 @@ function main(args) {
     console.log(JSON.stringify(extractor._rootDirectory, null, 4));
 
     // Extract all
-    //extractor.extractTo('.', './extracted');
+    extractor.extractTo('./php-5.4.45-devel-VC9-x86', './extracted');
     //extractor.extractTo('.\\', './extracted');
 
     //extractor.extractTo('.\\not/exist/path', './extracted');
 
     // Extract a directory
-    extractor.extractTo('php-5.4.45-devel-VC9-x86/script', './extracted');
+    //extractor.extractTo('php-5.4.45-devel-VC9-x86/script', './extracted');
+    //extractor.extractTo('php-5.4.45-devel-VC9-x86/include/main', './extracted');
 
     // Extract a file
     //extractor.extractTo('php-5.4.45-devel-VC9-x86/include/ext/mbstring/libmbfl/mbfl/mbfilter.h', './extracted/mbstring');
