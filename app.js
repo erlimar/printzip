@@ -6,7 +6,8 @@
 /* global process, __filename, __dirname */
 
 var _fs = require('fs'),
-    _path = require('path');
+    _path = require('path'),
+    _zlib = require('zlib');
 
 /**
  * Read a BYTE (8bits) from buffer
@@ -15,7 +16,7 @@ var _fs = require('fs'),
  * 
  * @return {number} 
  */
-Buffer.prototype.readZipByte = function(position) {
+Buffer.prototype.readZipByte = function (position) {
     /** @todo: Privatize */
     if (!(this instanceof Buffer)) {
         throw new Error('This must be a Buffer instance');
@@ -31,7 +32,7 @@ Buffer.prototype.readZipByte = function(position) {
  * 
  * @return {number} 
  */
-Buffer.prototype.readZipWord = function(position) {
+Buffer.prototype.readZipWord = function (position) {
     /** @todo: Privatize */
     if (!(this instanceof Buffer)) {
         throw new Error('This must be a Buffer instance');
@@ -47,7 +48,7 @@ Buffer.prototype.readZipWord = function(position) {
  * 
  * @return {number} 
  */
-Buffer.prototype.readZipDWord = function(position) {
+Buffer.prototype.readZipDWord = function (position) {
     /** @todo: Privatize */
     if (!(this instanceof Buffer)) {
         throw new Error('This must be a Buffer instance');
@@ -267,7 +268,7 @@ function ZipExtractor(filePath) {
     this.readCentralDirectoryFiles();
 }
 
-ZipExtractor.prototype.ensureDirectoryEntry = function(parts) {
+ZipExtractor.prototype.ensureDirectoryEntry = function (parts) {
     /*
     Entry = {
         "name": ".",
@@ -311,7 +312,7 @@ ZipExtractor.prototype.ensureDirectoryEntry = function(parts) {
  * 
  * @param {Object} meta ZipCentralDirectoryFileHeader instance
  */
-ZipExtractor.prototype.mapFile = function(meta) {
+ZipExtractor.prototype.mapFile = function (meta) {
     /** @todo: Privatize */
     var isDir = meta._fileName.lastIndexOf('/') === meta._fileName.length - 1,
         dirParts = meta._fileName.split('/'),
@@ -336,7 +337,7 @@ ZipExtractor.prototype.mapFile = function(meta) {
  * 
  * @return {Object} Content Buffer 
  */
-ZipExtractor.prototype.read = function(length, position) {
+ZipExtractor.prototype.read = function (length, position) {
     /** @todo: Privatize */
     if (!Number.isInteger(length) || length < 1) {
         throw new Error('Param @length must be a positive number');
@@ -362,7 +363,7 @@ ZipExtractor.prototype.read = function(length, position) {
 /**
  * End of central dir record from zip file 
  */
-ZipExtractor.prototype.readEndOfCentralDirectory = function() {
+ZipExtractor.prototype.readEndOfCentralDirectory = function () {
     /** @todo: Privatize */
     var eocd_pos = this._size - 4;
 
@@ -403,7 +404,7 @@ ZipExtractor.prototype.readEndOfCentralDirectory = function() {
 /**
  * Read a file header list from central directory structure of ZIP file
  */
-ZipExtractor.prototype.readCentralDirectoryFiles = function() {
+ZipExtractor.prototype.readCentralDirectoryFiles = function () {
     /** @todo: Privatize */
     if (!(this._eocd instanceof ZipEndOfCentralDirectory)) {
         throw new Error('Invalid EOCD instance.');
@@ -450,7 +451,7 @@ ZipExtractor.prototype.readCentralDirectoryFiles = function() {
  * 
  * @param {string} path
  */
-ZipExtractor.prototype.makeDirectory = function(path) {
+ZipExtractor.prototype.makeDirectory = function (path) {
     /** @todo: Privatize */
     var stat;
     try {
@@ -481,7 +482,7 @@ ZipExtractor.prototype.makeDirectory = function(path) {
  * 
  * @return {string}
  */
-ZipExtractor.prototype.pathWithoutSlashTrailing = function(path, sep) {
+ZipExtractor.prototype.pathWithoutSlashTrailing = function (path, sep) {
     var withoutTrailing = path.substr(path.length - 1, 1) === (sep || _path.sep)
         ? path.substr(0, path.length - 1)
         : path;
@@ -490,12 +491,100 @@ ZipExtractor.prototype.pathWithoutSlashTrailing = function(path, sep) {
 }
 
 /**
+ * Get a entry on directory structure from path
+ * 
+ * @param {string} path
+ * 
+ * @return {Object}
+ */
+ZipExtractor.prototype.getEntryFromPath = function (path) {
+    path = path.replace(_path.sep, '/');
+
+    var entry = this._rootDirectory,
+        parts = path.split('/');
+
+    for (var pidx = 0; pidx < parts.length; pidx++) {
+        var part = parts[pidx].trim(),
+            found = false;
+
+        if (part === '') break;
+        if (pidx == 0 && (part === '.' || part === './')) continue;
+
+        for (var c in entry.childs) {
+            var child = entry.childs[c];
+            if (child.name === part) {
+                found = true;
+                entry = child;
+                break;
+            }
+        }
+
+        if (!found && pidx === parts.length - 1) {
+            for (var f in entry.files) {
+                var file = entry.files[f];
+                if (file.name === part) {
+                    found = true;
+                    entry = file;
+                    break;
+                }
+            }
+        }
+
+        if (!found) return null;
+    }
+
+    return entry;
+}
+
+ZipExtractor.prototype.ensureDestinationDirectory = function (destination) {
+    /** @todo: Privatize */
+    try {
+        var stat = _fs.statSync(destination);
+
+        if (!stat.isDirectory()) {
+            throw new Error('Destination path ' + destination + '" already exists and not a directory.');
+        }
+    } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        this.makeDirectory(destination);
+    }
+}
+
+ZipExtractor.prototype.extractDirectory = function (entry, destination) {
+    /** @todo: Privatize */
+    if (!(entry instanceof ZipDirectoryEntry)) {
+        throw new Error('Param @entry must be a ZipDirectoryEntry instance');
+    }
+
+    this.ensureDestinationDirectory(destination);
+
+    throw new Error("TODO: ZipExtractor.prototype.extractDirectory not implemented.");
+}
+
+ZipExtractor.prototype.extractFile = function (entry, destination) {
+    /** @todo: Privatize */
+    if (!(entry instanceof ZipFileEntry)) {
+        throw new Error('Param @entry must be a ZipFileEntry instance');
+    }
+
+    this.ensureDestinationDirectory(destination);
+
+    var filePath = _path.resolve(_path.join(destination, entry.name)),
+        offset = this._eocd._offset + entry.meta._relativeOffset,
+        length = entry.meta._compressedSize//,
+        //bufferInput = this.read(length, offset)
+        ;
+
+    throw new Error("TODO: ZipExtractor.prototype.extractFile not implemented.");
+}
+
+/**
  * Extract a path to a destination
  * 
  * @param {string} path
  * @param {string} destination
  */
-ZipExtractor.prototype.extractTo = function(path, destination) {
+ZipExtractor.prototype.extractTo = function (path, destination) {
     /** @todo: Privatize */
     if (typeof (path) !== 'string') throw new TypeError('Param @path must be a string');
     if (typeof (destination) !== 'string') throw new TypeError('Param @destination must be a string');
@@ -503,7 +592,21 @@ ZipExtractor.prototype.extractTo = function(path, destination) {
     if (1 > path.trim().length) throw new Error('Parameter @path can not be empty');
     if (1 > destination.trim().length) throw new Error('Parameter @destination can not be empty');
 
-    throw new Error("ZipExtractor.prototype.extractTo() not implemented!");
+    var entry = this.getEntryFromPath(path);
+
+    if (!entry) throw new Error('Path "' + path + '" not found on ZIP file');
+
+    if (entry instanceof ZipDirectoryEntry) {
+        this.extractDirectory(entry, destination);
+        return;
+    }
+
+    if (entry instanceof ZipFileEntry) {
+        this.extractFile(entry, destination);
+        return;
+    }
+
+    throw new Error('ZIP file entry corrupted from path "' + path + '"');
 }
 
 /**
@@ -520,15 +623,15 @@ function main(args) {
 
     // Extract all
     //extractor.extractTo('.', './extracted');
-    //extractor.extractTo('./', './extracted');
+    //extractor.extractTo('.\\', './extracted');
 
-    //extractor.extractTo('not/exist/path', './extracted');
+    //extractor.extractTo('.\\not/exist/path', './extracted');
 
     // Extract a directory
     //extractor.extractTo('php-5.4.45-devel-VC9-x86/script', './extracted');
 
     // Extract a file
-    //extractor.extractTo('php-5.4.45-devel-VC9-x86/include/ext/mbstring/libmbfl/mbfl/mbfilter.h', './extracted/mbstring');
+    extractor.extractTo('php-5.4.45-devel-VC9-x86/include/ext/mbstring/libmbfl/mbfl/mbfilter.h', './extracted/mbstring');
 }
 
 main(process.argv.slice(2));
